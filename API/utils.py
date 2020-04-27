@@ -286,13 +286,16 @@ class EVA(object):
         self.sle = self.sp162[self.col_names['sle']]
         self.she = self.sp162[self.col_names['she']]
         #===========================
-        self.fhc = case4['Case Conditions_Heart Cut Prod. Rate (Input)_m3/hr']
-        self.fle = self.fhc * ((self.sle.sum(axis=1))/(self.shc.sum(axis=1)))
-        self.fhe = self.fhc * ((self.she.sum(axis=1))/(self.shc.sum(axis=1)))
-        self.fle.name = self.col_names['Rate_m3'][1]
-        self.fhe.name = self.col_names['Rate_m3'][3]
+        self.fhc_m3 = case4['Case Conditions_Heart Cut Prod. Rate (Input)_m3/hr']
+        self.fhc_ton = self.fhc_m3.values * self.density.iloc[:,2].values
+        self.fle_ton = self.fhc_ton * ((self.y54.values@self.sle.values.ravel())/(self.y54.values@self.shc.values.ravel()))
+        self.fhe_ton = self.fhc_ton * ((self.y54.values@self.she.values.ravel())/(self.y54.values@self.shc.values.ravel()))
+        self.fle_m3 = self.fle_ton / self.density.iloc[:,1].values
+        self.fhe_m3 = self.fhe_ton / self.density.iloc[:,3].values
+        self.fle_m3 = pd.Series(self.fle_m3,name=self.col_names['Rate_m3'][1])
+        self.fhe_m3 = pd.Series(self.fhe_m3,name=self.col_names['Rate_m3'][3])
         #===========================
-        self.predict = self.y15.join(self.fle).join(self.fhe).join(self.duty)
+        self.predict = self.y15.join(self.fle_m3).join(self.fhe_m3).join(self.duty)
         self.naphtha = self.y23
         self.pre_d = self.sp162
         self.reform = self.y33
