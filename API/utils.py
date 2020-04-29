@@ -257,53 +257,6 @@ class transformer_3315(object):
     def __call__(self,X):
         return pd.DataFrame(X.values@self.W,columns=self.y_col)
 
-class EVA(object):
-    def __init__(self):
-        self.A = joblib.load('./model/SVR(4_to_23).pkl')
-        self.B = joblib.load('./model/transformer(23_to_54).pkl')
-        self.C = joblib.load('./model/ANN(58_to_sp162).pkl')
-        self.D = joblib.load('./model/transformer(SP162_to_Y162).pkl')
-        self.E = joblib.load('./model/ANN(energy).pkl')
-        self.F = joblib.load('./model/transformer(54_to_33).pkl')
-        self.G = joblib.load('./model/transformer(33_to_15).pkl')
-        self.col_names = joblib.load('./data/phase_2/cleaned/col_names.pkl')
-    
-    def __call__(self,X):
-        x4,case4 = X.iloc[:,:4],X.iloc[:,4:]
-        self.y23 = self.A.predict(x4)
-        self.y54 = self.B(self.y23)
-        self.sp162 = self.C.predict(case4.join(self.y54))
-        self.y162 = self.D(self.y54,self.sp162)
-        self.hc54 = self.y162[self.col_names['xhc']]
-        self.y33 = self.F(self.hc54)
-        self.y15 = self.G(self.y33)
-        #===========================
-        E_pred = self.E.predict(case4.join(self.y54))
-        self.duty = E_pred.iloc[:,:2]
-        self.density = E_pred.iloc[:,2:]
-        #===========================
-        self.shc = self.sp162[self.col_names['shc']]
-        self.sle = self.sp162[self.col_names['sle']]
-        self.she = self.sp162[self.col_names['she']]
-        #===========================
-        self.fhc_m3 = case4['Case Conditions_Heart Cut Prod. Rate (Input)_m3/hr']
-        self.fhc_ton = self.fhc_m3.values * self.density.iloc[:,2].values
-        self.fle_ton = self.fhc_ton * ((self.y54.values@self.sle.values.ravel())/(self.y54.values@self.shc.values.ravel()))
-        self.fhe_ton = self.fhc_ton * ((self.y54.values@self.she.values.ravel())/(self.y54.values@self.shc.values.ravel()))
-        #========================================================
-        self.fna_ton = self.fle_ton + self.fhc_ton + self.fhe_ton
-        self.fna_ton_p = 200000
-        self.fle_ton_p = 200000 * self.fle_ton/self.fna_ton
-        self.fhc_ton_p = 200000 * self.fhc_ton/self.fna_ton
-        self.fhe_ton_p = 200000 * self.fhe_ton/self.fna_ton
-        self.fle_ton_p = pd.Series(self.fle_ton_p,name=self.col_names['Rate_ton'][1])
-        self.fhe_ton_p = pd.Series(self.fhe_ton_p,name=self.col_names['Rate_ton'][3])
-        #===========================
-        self.duty *= 200/self.fna_ton[0]
-        self.predict = self.y15.join(self.fle_ton_p).join(self.fhe_ton_p).join(self.duty)
-        self.naphtha = self.y23
-        self.pre_d = self.sp162
-        self.reform = self.y33
 
 class model4333(object):
     def __init__(self,x_col,y_col):
@@ -323,3 +276,80 @@ class model4333(object):
         for name in self.y_col:
             result[name] = self.model[name].predict(X)
         return result
+
+class EVA(object):
+    def __init__(self):
+        self.A = joblib.load('./model/SVR(4_to_23).pkl')
+        self.B = joblib.load('./model/transformer(23_to_54).pkl')
+        self.C = joblib.load('./model/ANN(58_to_sp162).pkl')
+        self.D = joblib.load('./model/transformer(SP162_to_Y162).pkl')
+        self.E = joblib.load('./model/ANN(energy).pkl')
+        self.F = joblib.load('./model/transformer(54_to_33).pkl')
+        self.G = joblib.load('./model/transformer(33_to_15).pkl')
+        self.H = joblib.load('./model/transformer(43_to_33).pkl')
+        self.col_names = joblib.load('./data/phase_2/cleaned/col_names.pkl')
+    
+    def __call__(self,X):
+        x4,case4 = X.iloc[:,:4],X.iloc[:,4:]
+        # model forward
+        self.y23 = self.A.predict(x4) #percent sum = 100
+        self.Xna = self.B(self.y23) #percent sum = 100
+        self.sp162 = self.C.predict(case4.join(self.Xna)) #percent sum = 1 * 54component = 54
+        self.y162 = self.D(self.Xna,self.sp162) #percent sum = 100*3(le,hc,he) = 300
+        self.xhc = self.y162[self.col_names['xhc']] #percent sum = 100
+        self.xhc33_p = self.F(self.xhc) # percent 
+        
+        # predict duty and density(ton/m3)
+        E_pred = self.E.predict(case4.join(self.Xna))
+        self.duty = E_pred.iloc[:,:2]
+        self.density = E_pred.iloc[:,2:]
+        
+        # get split factor
+        self.shc = self.sp162[self.col_names['shc']]
+        self.sle = self.sp162[self.col_names['sle']]
+        self.she = self.sp162[self.col_names['she']]
+        
+        # fhc_ton = fhc_m3*density
+        self.fhc_m3 = case4['Case Conditions_Heart Cut Prod. Rate (Input)_m3/hr']
+        self.fhc_ton = self.fhc_m3.values * self.density.iloc[:,2].values
+        
+        # calculate fle_ton,fhe_ton
+        self.fle_ton = self.fhc_ton * ((self.Xna.values@self.sle.values.ravel())/
+                                       (self.Xna.values@self.shc.values.ravel()))
+        self.fhe_ton = self.fhc_ton * ((self.Xna.values@self.she.values.ravel())/
+                                       (self.Xna.values@self.shc.values.ravel()))
+        
+        # calculate fna
+        self.fna_ton = self.fle_ton + self.fhc_ton + self.fhe_ton
+        
+        # scale fle,fhc,fhe
+        self.fle_ton = self.fle_ton*200000/self.fna_ton
+        self.fhc_ton = self.fhc_ton*200000/self.fna_ton
+        self.fhe_ton = self.fhe_ton*200000/self.fna_ton
+        
+        # add columns name
+        self.fle_ton = pd.Series(self.fle_ton,name=self.col_names['Rate_ton'][1])
+        self.fhe_ton = pd.Series(self.fhe_ton,name=self.col_names['Rate_ton'][3])
+        
+        # scale duty
+        self.duty *= 200/self.fna_ton[0]
+        
+        # xhc33 = fhc_ton*xhc_33_p
+        self.xhc33 = self.fhc_ton[0]*self.xhc33_p
+        
+        # xhe33 = H(someting + xhc33 + something) 
+        NpA = x4.iloc[:,-1][0]
+        C6Pm = self.y23[['C6NP','C6IP']].sum(axis=1)[0]
+        H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
+        H_input = np.array([H_input])
+        H_input = pd.DataFrame(H_input,columns=self.H.x_col)
+        self.xhe33 = self.H.predict(H_input)
+        
+        # final output
+        self.y15 = self.G(self.xhe33)
+        
+        # raname and combine return to user
+        self.predict = self.y15.join(self.fle_ton).join(self.fhe_ton).join(self.duty)
+        self.naphtha = self.y23
+        self.pre_d = self.sp162
+        self.reform = self.xhe33
