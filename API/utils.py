@@ -83,6 +83,17 @@ class transform_2354(object):
         res = x.values@self.W
         return pd.DataFrame(res,columns=self.y_cols)
 
+class transform_5423(object):
+    def __init__(self):
+        self.x_cols = y54.columns.tolist()
+        self.y_cols = y23.columns.tolist()
+        self.W = W
+    
+    def __call__(self,x):
+        y23 = (x/self.W.sum(axis=0).values).fillna(0)@self.W.T.values
+        y23.columns = self.y_cols
+        return y23
+
 class Dual_net(nn.Module):
     def __init__(self):
         super(Dual_net,self).__init__()
@@ -287,6 +298,7 @@ class EVA(object):
         self.F = joblib.load('./model/transformer(54_to_33).pkl')
         self.G = joblib.load('./model/transformer(33_to_15).pkl')
         self.H = joblib.load('./model/transformer(43_to_33).pkl')
+        self.I = joblib.load('./model/transformer(54_to_23).pkl')
         self.col_names = joblib.load('./data/phase_2/cleaned/col_names.pkl')
     
     def __call__(self,X):
@@ -338,8 +350,9 @@ class EVA(object):
         self.xhc33 = self.fhc_ton[0]*self.xhc33_p
         
         # xhe33 = H(someting + xhc33 + something) 
-        NpA = x4.iloc[:,-1][0]
-        C6Pm = self.y23[['C6NP','C6IP']].sum(axis=1)[0]
+        xhc23 = self.I(self.xhc)
+        C6Pm = xhc23[['C5NP','C5IP','C6IP','C6NP']].sum(axis=1)[0]
+        NpA = xhc23[['C5N','C6N','C7N','C8N','C9N','C10N','C6A','C7A','C8A','C9A','C10A']].sum(axis=1)[0]
         H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
         H_input = np.array([H_input])
         H_input = pd.DataFrame(H_input,columns=self.H.x_col)
