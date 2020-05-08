@@ -238,16 +238,18 @@ class energy_net(nn.Module):
         return x
 
 class ANN_energy_wrapper(object):
-    def __init__(self,x_col,y_col,scaler,net):
+    def __init__(self,x_col,y_col,mm_x,mm_y,net):
         self.x_col = x_col
         self.y_col = y_col
-        self.scaler = scaler
+        self.mm_x = mm_x
+        self.mm_y = mm_y
         self.net = net
     
     def predict(self,x):
-        x = self.scaler.transform(x)
+        x = self.mm_x.transform(x)
         x = torch.tensor(x,dtype=torch.float).cuda()
         y = self.net(x).detach().cpu().numpy()
+        y = self.mm_y.inverse_transform(y)
         y = pd.DataFrame(y,columns=self.y_col)
         return y
 
@@ -287,6 +289,22 @@ class model4333(object):
         for name in self.y_col:
             result[name] = self.model[name].predict(X)
         return result
+
+class model_tray_wrapper(object):
+    def __init__(self,x_col,y_col,mm_x,mm_y,net):
+        self.x_col = x_col
+        self.y_col = y_col
+        self.mm_x = mm_x
+        self.mm_y = mm_y
+        self.net = net
+    
+    def predict(self,x):
+        x = self.mm_x.transform(x)
+        x = torch.tensor(x,dtype=torch.float).cuda()
+        y = self.net(x).detach().cpu().numpy()
+        y = self.mm_y.inverse_transform(y)
+        y = pd.DataFrame(y,columns=self.y_col)
+        return y
 
 class EVA(object):
     def __init__(self):
