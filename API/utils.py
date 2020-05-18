@@ -185,7 +185,7 @@ class ANN_wrapper(object):
         x = self.scaler.transform(x)
         x = torch.tensor(x,dtype=torch.float).cuda()
         y = self.net(x).detach().cpu().numpy()
-        y = pd.DataFrame(y,columns=self.y_col).apply(lambda x:round(x,12))
+        y = pd.DataFrame(y,columns=self.y_col)
         y = self.normalize(y)
         return y
     
@@ -234,8 +234,7 @@ class energy_net(nn.Module):
     def forward(self,x):
         x = F.tanh(self.fc1(x))
         x = F.tanh(self.fc2(x))
-        x = self.fc3(x)
-        return x
+        return F.sigmoid(self.fc3(x))
 
 class ANN_energy_wrapper(object):
     def __init__(self,x_col,y_col,mm_x,mm_y,net):
@@ -270,25 +269,50 @@ class transformer_3315(object):
     def __call__(self,X):
         return pd.DataFrame(X.values@self.W,columns=self.y_col)
 
+class model4333(nn.Module):
+    def __init__(self,input_shape,output_shape):
+        super(model4333,self).__init__()
+        self.fc1 = Linear(input_shape,256)
+        self.fc2 = Linear(256,128)
+        self.fc3 = Linear(128,output_shape)
+        self.dropout = Dropout(0.5)
+    
+    def forward(self,x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = F.sigmoid(self.fc3(x))
+        return x
 
-class model4333(object):
-    def __init__(self,x_col,y_col):
+class model_4333_wraper:
+    def __init__(self):
         self.x_col = x_col
         self.y_col = y_col
-        self.model = {}
-        for y_name in self.y_col:
-            self.model[y_name] = LinearRegression()
-            
-    def fit(self,X,y):
-        for name in tqdm(self.y_col):
-            self.model[name].fit(X,y[name])
-        print('fit done')
+        self.mm_x = mm_x
+        self.mm_y = mm_y
+        self.net = net.eval()
     
-    def predict(self,X):
-        result = pd.DataFrame(index=X.index,columns=self.y_col)
-        for name in self.y_col:
-            result[name] = self.model[name].predict(X)
-        return result
+    def predict(self,x):
+        x = self.mm_x.transform(x)
+        x = torch.tensor(x,dtype=torch.float).cuda()
+        y = self.net(x)
+        y = y.detach().cpu().numpy()
+        y = self.mm_y.inverse_transform(y)
+        y = pd.DataFrame(y,columns=self.y_col)
+        return y
+
+class model_tray(nn.Module):
+    def __init__(self,input_shape,output_shape):
+        super().__init__()
+        self.fc1 = Linear(input_shape,64)
+        self.fc2 = Linear(64,256)
+        self.fc3 = Linear(256,output_shape)
+    
+    def forward(self,x):
+        x = F.tanh(self.fc1(x))
+        x = F.tanh(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class model_tray_wrapper(object):
     def __init__(self,x_col,y_col,mm_x,mm_y,net):
@@ -371,16 +395,31 @@ class EVA(object):
         xhc23 = self.I(self.xhc)
         C6Pm = xhc23[['C5NP','C5IP','C6IP','C6NP']].sum(axis=1)[0]
         NpA = xhc23[['C5N','C6N','C7N','C8N','C9N','C10N','C6A','C7A','C8A','C9A','C10A']].sum(axis=1)[0]
+        
         H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
         H_input = np.array([H_input])
         H_input = pd.DataFrame(H_input,columns=self.H.x_col)
-        self.xhe33 = self.H.predict(H_input)
+        
+        self.重組33 = self.H.predict(H_input)
         
         # final output
-        self.y15 = self.G(self.xhe33)
+        self.重組15 = self.G(self.重組33)
         
         # raname and combine return to user
-        self.predict = self.y15.join(self.fle_ton).join(self.fhe_ton).join(self.duty)
+        self.predict = self.重組15.join(self.fle_ton).join(self.fhe_ton).join(self.duty)
         self.naphtha = self.y23
         self.pre_d = self.sp162
-        self.reform = self.xhe33
+        self.reform = self.重組33
+
+class Price_model:
+    def __init__(self,各產品單價,回送輕油單價,輕油單價):
+        self.各產品單價 = 各產品單價
+        self.回送輕油單價 = 回送輕油單價
+        self.輕油單價 = 輕油單價
+    
+    def compute_price(self,各重組油組成,產出量,回送輕油流量,輕油用量):
+        total = 0
+        total += (各重組油組成*產出量*self.各產品單價).sum() # (vector*scalar*vector).sum()
+        total += 回送輕油流量*self.回送輕油單價 # scalar*scalar
+        total -= 輕油用量*self.輕油單價 # scalar*scalar
+        return total
