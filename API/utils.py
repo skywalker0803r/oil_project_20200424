@@ -293,13 +293,22 @@ class model_4333_wraper:
         self.net = net.eval()
     
     def predict(self,x):
+        feed = x.iloc[:,8:8+33].sum(axis=1).values.reshape(-1,1)
         x = self.mm_x.transform(x)
         x = torch.tensor(x,dtype=torch.float).cuda()
         y = self.net(x)
         y = y.detach().cpu().numpy()
         y = self.mm_y.inverse_transform(y)
+        y = self.normalize(y,feed)
         y = pd.DataFrame(y,columns=self.y_col)
+        output = y.sum(axis=1).values.reshape(-1,1)
+        assert np.allclose(feed,output)
         return y
+    
+    def normalize(self,x,feed):
+        x = x / x.sum(axis=1).reshape(-1,1)
+        x *= feed
+        return x
 
 class model_tray(nn.Module):
     def __init__(self,input_shape,output_shape):
