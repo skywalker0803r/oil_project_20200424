@@ -122,7 +122,7 @@ class Dual_net(nn.Module):
         c,n = self.C_net(c),self.N_net(n)
         f = torch.cat((c,n),dim=1)
         f = self.F_net(f)
-        output = torch.tensor([]).cuda()
+        output = torch.tensor([])#.cuda()
         for i in range(54):
             O_net = getattr(self,'O_net{}'.format(i+1))
             v = F.sigmoid(O_net(f))
@@ -139,7 +139,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net.cuda()
+        return net#.cuda()
     
     @staticmethod
     def _build_N_net(input_shape,output_shape):
@@ -147,7 +147,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net.cuda()
+        return net#.cuda()
     
     @staticmethod
     def _build_F_net(input_shape,output_shape):
@@ -155,7 +155,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net.cuda()
+        return net#.cuda()
     
     @staticmethod
     def _build_O_net(input_shape,output_shape):
@@ -163,7 +163,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net.cuda()
+        return net#.cuda()
     
     @staticmethod
     def _init_weights(m):
@@ -183,10 +183,11 @@ class ANN_wrapper(object):
     
     def predict(self,x):
         x = self.scaler.transform(x)
-        x = torch.tensor(x,dtype=torch.float).cuda()
+        x = torch.tensor(x,dtype=torch.float)
         y = self.net(x).detach().cpu().numpy()
         y = pd.DataFrame(y,columns=self.y_col)
         y = self.normalize(y)
+        assert np.all(y.values >= 0)
         return y
     
     def normalize(self,y):
@@ -234,7 +235,8 @@ class energy_net(nn.Module):
     def forward(self,x):
         x = F.tanh(self.fc1(x))
         x = F.tanh(self.fc2(x))
-        return F.sigmoid(self.fc3(x))
+        x = F.sigmoid(self.fc3(x))
+        return x
 
 class ANN_energy_wrapper(object):
     def __init__(self,x_col,y_col,mm_x,mm_y,net):
@@ -246,10 +248,11 @@ class ANN_energy_wrapper(object):
     
     def predict(self,x):
         x = self.mm_x.transform(x)
-        x = torch.tensor(x,dtype=torch.float).cuda()
+        x = torch.tensor(x,dtype=torch.float)#.cuda()
         y = self.net(x).detach().cpu().numpy()
         y = self.mm_y.inverse_transform(y)
         y = pd.DataFrame(y,columns=self.y_col)
+        assert np.all(y.values >= 0)
         return y
 
 class transformer_5433(object):
@@ -295,7 +298,7 @@ class model_4333_wraper:
     def predict(self,x):
         feed = x.iloc[:,8:8+33].sum(axis=1).values.reshape(-1,1)
         x = self.mm_x.transform(x)
-        x = torch.tensor(x,dtype=torch.float).cuda()
+        x = torch.tensor(x,dtype=torch.float)#.cuda()
         y = self.net(x)
         y = y.detach().cpu().numpy()
         y = self.mm_y.inverse_transform(y)
@@ -303,6 +306,7 @@ class model_4333_wraper:
         y = pd.DataFrame(y,columns=self.y_col)
         output = y.sum(axis=1).values.reshape(-1,1)
         assert np.allclose(feed,output)
+        assert np.all(y.values >= 0)
         return y
     
     def normalize(self,x,feed):
@@ -313,14 +317,14 @@ class model_4333_wraper:
 class model_tray(nn.Module):
     def __init__(self,input_shape,output_shape):
         super().__init__()
-        self.fc1 = Linear(input_shape,64)
-        self.fc2 = Linear(64,256)
-        self.fc3 = Linear(256,output_shape)
+        self.fc1 = Linear(input_shape,128)
+        self.fc2 = Linear(128,128)
+        self.fc3 = Linear(128,output_shape)
     
     def forward(self,x):
         x = F.tanh(self.fc1(x))
         x = F.tanh(self.fc2(x))
-        x = self.fc3(x)
+        x = F.sigmoid(self.fc3(x))
         return x
 
 class model_tray_wrapper(object):
@@ -333,10 +337,11 @@ class model_tray_wrapper(object):
     
     def predict(self,x):
         x = self.mm_x.transform(x)
-        x = torch.tensor(x,dtype=torch.float).cuda()
+        x = torch.tensor(x,dtype=torch.float)#.cuda()
         y = self.net(x).detach().cpu().numpy()
         y = self.mm_y.inverse_transform(y)
         y = pd.DataFrame(y,columns=self.y_col)
+        assert np.all(y.values >= 0)
         return y
 
 class EVA(object):
@@ -432,3 +437,33 @@ class Price_model:
         total += 回送輕油流量*self.回送輕油單價 # scalar*scalar
         total -= 輕油用量*self.輕油單價 # scalar*scalar
         return total
+
+class OperationOptimModel:
+    def __init__(self,F,Q,case_list):
+        self.case_list = case_list
+        self.F = F
+        self.Q = Q
+    
+    def get_advice(self,xna):
+        fitness = []
+        actions = []
+        
+        #對各種case遍歷取得a,h,r代入Q函數計算產值,返回最大產值對應的action
+        print('產值計算中請稍等')
+        for case in tqdm(self.case_list):
+            
+            # 使用操作建議模組取得 加熱建議a , 產物組成h , 流量r(入料量,回流量,輕流量,重流量)
+            加熱量,產物,流量,加工成本 = self.F(case,xna)
+            回送流量 = 流量.iloc[:,-2:].sum(axis=1).values[0]
+            輕油用量 = 流量.iloc[:,0].values[0]
+            產物 = 產物.values
+            加工成本 = 加工成本.values
+            actions.append(加熱量)
+            
+            #代入估價模組計算產值
+            產值 = self.Q(產物,回送流量,輕油用量,加工成本)
+            fitness.append(產值)
+        
+        # 選擇效益最大的產值對應的操作
+        best_idx = np.array(fitness).argmax()
+        return actions[best_idx],fitness[best_idx],fitness
