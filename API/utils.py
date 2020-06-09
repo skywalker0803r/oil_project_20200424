@@ -408,7 +408,9 @@ class EVA(object):
         # xhe33 = H(someting + xhc33 + something) 
         xhc23 = self.I(self.xhc)
         C6Pm = xhc23[['C5NP','C5IP','C6IP','C6NP']].sum(axis=1)[0]
-        NpA = xhc23[['C5N','C6N','C7N','C8N','C9N','C10N','C6A','C7A','C8A','C9A','C10A']].sum(axis=1)[0]
+        
+        NpA = xhc23[['C5N','C6N','C7N','C8N','C9N','C10N']].sum(axis=1)[0]+\
+              xhc23[['C6A','C7A','C8A','C9A','C10A']].sum(axis=1)[0]*2
         
         H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
         H_input = np.array([H_input])
@@ -424,7 +426,7 @@ class EVA(object):
         self.naphtha = self.y23
         self.pre_d = self.sp162
         self.reform = self.重組33
-
+        
 class Price_model:
     def __init__(self,各產品單價,回送輕油單價,輕油單價):
         self.各產品單價 = 各產品單價
