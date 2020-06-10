@@ -275,9 +275,9 @@ class transformer_3315(object):
 class model4333(nn.Module):
     def __init__(self,input_shape,output_shape):
         super(model4333,self).__init__()
-        self.fc1 = Linear(input_shape,256)
-        self.fc2 = Linear(256,128)
-        self.fc3 = Linear(128,output_shape)
+        self.fc1 = Linear(input_shape,256,bias=False)
+        self.fc2 = Linear(256,128,bias=False)
+        self.fc3 = Linear(128,output_shape,bias=False)
         self.dropout = Dropout(0.5)
     
     def forward(self,x):
