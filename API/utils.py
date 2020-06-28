@@ -185,8 +185,10 @@ class ANN_wrapper(object):
         x = self.scaler.transform(x)
         x = torch.tensor(x,dtype=torch.float)
         y = self.net(x).detach().cpu().numpy()
+        print(y)
         y = pd.DataFrame(y,columns=self.y_col)
         y = self.normalize(y)
+        print(y)
         assert np.all(y.values >= 0)
         return y
     
@@ -278,7 +280,7 @@ class model4333(nn.Module):
         self.fc1 = Linear(input_shape,256,bias=False)
         self.fc2 = Linear(256,128,bias=False)
         self.fc3 = Linear(128,output_shape,bias=False)
-        self.dropout = Dropout(0.5)
+        self.dropout = Dropout(0.1)
     
     def forward(self,x):
         x = F.relu(self.fc1(x))
@@ -304,6 +306,7 @@ class model_4333_wraper:
         y = self.mm_y.inverse_transform(y)
         y = self.normalize(y,feed)
         y = pd.DataFrame(y,columns=self.y_col)
+        print(y)
         output = y.sum(axis=1).values.reshape(-1,1)
         assert np.allclose(feed,output)
         assert np.all(y.values >= 0)
