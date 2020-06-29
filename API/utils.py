@@ -185,10 +185,8 @@ class ANN_wrapper(object):
         x = self.scaler.transform(x)
         x = torch.tensor(x,dtype=torch.float)
         y = self.net(x).detach().cpu().numpy()
-        print(y)
         y = pd.DataFrame(y,columns=self.y_col)
         y = self.normalize(y)
-        print(y)
         assert np.all(y.values >= 0)
         return y
     
@@ -306,7 +304,6 @@ class model_4333_wraper:
         y = self.mm_y.inverse_transform(y)
         y = self.normalize(y,feed)
         y = pd.DataFrame(y,columns=self.y_col)
-        print(y)
         output = y.sum(axis=1).values.reshape(-1,1)
         assert np.allclose(feed,output)
         assert np.all(y.values >= 0)
@@ -359,74 +356,85 @@ class EVA(object):
         self.H = joblib.load('./model/transformer(43_to_33).pkl')
         self.I = joblib.load('./model/transformer(54_to_23).pkl')
         self.col_names = joblib.load('./data/phase_2/cleaned/col_names.pkl')
-    
-    def __call__(self,X):
-        x4,case4 = X.iloc[:,:4],X.iloc[:,4:]
+
+    def __call__(self, X):
+        x4, case4 = X.iloc[:, :4], X.iloc[:, 4:]
         # model forward
-        self.y23 = self.A.predict(x4) #percent sum = 100
-        self.Xna = self.B(self.y23) #percent sum = 100
-        self.sp162 = self.C.predict(case4.join(self.Xna)) #percent sum = 1 * 54component = 54
-        self.y162 = self.D(self.Xna,self.sp162) #percent sum = 100*3(le,hc,he) = 300
-        self.xhc = self.y162[self.col_names['xhc']] #percent sum = 100
-        self.xhc33_p = self.F(self.xhc) # percent 
-        
+        self.y23 = self.A.predict(x4)  # percent sum = 100
+        self.Xna = self.B(self.y23)  # percent sum = 100
+        # percent sum = 1 * 54component = 54
+        self.sp162 = self.C.predict(case4.join(self.Xna))
+        # percent sum = 100*3(le,hc,he) = 300
+        self.y162 = self.D(self.Xna, self.sp162)
+        self.xhc = self.y162[self.col_names['xhc']]  # percent sum = 100
+        self.xhc33_p = self.F(self.xhc)/100  # percent
+
         # predict duty and density(ton/m3)
         E_pred = self.E.predict(case4.join(self.Xna))
-        self.duty = E_pred.iloc[:,:2]
-        self.density = E_pred.iloc[:,2:]
-        
+        self.duty = E_pred.iloc[:, :2]
+        self.density = E_pred.iloc[:, 2:]
+
         # get split factor
         self.shc = self.sp162[self.col_names['shc']]
         self.sle = self.sp162[self.col_names['sle']]
         self.she = self.sp162[self.col_names['she']]
-        
+
         # fhc_ton = fhc_m3*density
         self.fhc_m3 = case4['Case Conditions_Heart Cut Prod. Rate (Input)_m3/hr']
-        self.fhc_ton = self.fhc_m3.values * self.density.iloc[:,2].values
-        
+        self.fhc_ton = self.fhc_m3.values * self.density.iloc[:, 2].values
+
         # calculate fle_ton,fhe_ton
-        self.fle_ton = self.fhc_ton * ((self.Xna.values@self.sle.values.ravel())/
+        self.fle_ton = self.fhc_ton * ((self.Xna.values@self.sle.values.ravel()) /
                                        (self.Xna.values@self.shc.values.ravel()))
-        self.fhe_ton = self.fhc_ton * ((self.Xna.values@self.she.values.ravel())/
+        self.fhe_ton = self.fhc_ton * ((self.Xna.values@self.she.values.ravel()) /
                                        (self.Xna.values@self.shc.values.ravel()))
-        
+
         # calculate fna
         self.fna_ton = self.fle_ton + self.fhc_ton + self.fhe_ton
-        
+
         # scale fle,fhc,fhe
-        self.fle_ton = self.fle_ton*200000/self.fna_ton
-        self.fhc_ton = self.fhc_ton*200000/self.fna_ton
-        self.fhe_ton = self.fhe_ton*200000/self.fna_ton
-        
+        self.fle_ton = self.fle_ton*100000/self.fna_ton
+        self.fhc_ton = self.fhc_ton*100000/self.fna_ton
+        self.fhe_ton = self.fhe_ton*100000/self.fna_ton
+
         # add columns name
-        self.fle_ton = pd.Series(self.fle_ton,name=self.col_names['Rate_ton'][1])
-        self.fhe_ton = pd.Series(self.fhe_ton,name=self.col_names['Rate_ton'][3])
-        
+        self.fle_ton = pd.Series(
+            self.fle_ton, name=self.col_names['Rate_ton'][1])
+        self.fhe_ton = pd.Series(
+            self.fhe_ton, name=self.col_names['Rate_ton'][3])
+
         # scale duty
-        self.duty *= 200/self.fna_ton[0]
-        
+        self.duty *= 100/self.fna_ton[0]
+
         # xhc33 = fhc_ton*xhc_33_p
         self.xhc33 = self.fhc_ton[0]*self.xhc33_p
-        
-        # xhe33 = H(someting + xhc33 + something) 
+        self.xhc33_tmp = self.xhc33*74000/self.fhc_ton[0]
+
+        # xhe33 = H(someting + xhc33 + something)
         xhc23 = self.I(self.xhc)
-        C6Pm = xhc23[['C5NP','C5IP','C6IP','C6NP']].sum(axis=1)[0]
-        
-        NpA = xhc23[['C5N','C6N','C7N','C8N','C9N','C10N']].sum(axis=1)[0]+\
-              xhc23[['C6A','C7A','C8A','C9A','C10A']].sum(axis=1)[0]*2
-        
-        H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
-        H_input = np.array([H_input])
-        H_input = pd.DataFrame(H_input,columns=self.H.x_col)
-        self.reformer_input = H_input
-        
-        self.重組33 = self.H.predict(H_input)
-        
+        C6Pm = xhc23[['C5NP', 'C5IP', 'C6IP', 'C6NP']].sum(axis=1)[0]
+
+        NpA = xhc23[['C5N', 'C6N', 'C7N', 'C8N', 'C9N', 'C10N']].sum(axis=1)[0] +\
+            xhc23[['C6A', 'C7A', 'C8A', 'C9A', 'C10A']].sum(axis=1)[0]*2
+
+        self.H_input = [NpA, 0.942, 3.78, C6Pm, 517, 517, 517, 517] + \
+            self.xhc33_tmp.values.ravel().tolist()+[4.798, 1.44]
+        self.H_input = np.array([self.H_input])
+        self.H_input = pd.DataFrame(self.H_input, columns=self.H.x_col)
+        self.reformer_input = [NpA, 0.942, 3.78, C6Pm, 517, 517, 517, 517] + self.xhc33.values.ravel().tolist() + [4.798, 1.44]
+        self.reformer_input = np.array([self.reformer_input])
+        self.reformer_input = pd.DataFrame(self.reformer_input, columns=self.H.x_col)
+
+        self.重組33_tmp = self.H.predict(self.H_input)
+
+        self.重組33 = self.重組33_tmp *self.fhc_ton[0]/74000
+
         # final output
         self.重組15 = self.G(self.重組33)
-        
+
         # raname and combine return to user
-        self.predict = self.重組15.join(self.fle_ton).join(self.fhe_ton).join(self.duty)
+        self.predict = self.重組15.join(self.fle_ton).join(
+            self.fhe_ton).join(self.duty)
         self.naphtha = self.y23
         self.pre_d = self.sp162
         self.reform = self.重組33
