@@ -418,6 +418,7 @@ class EVA(object):
         H_input = [NpA,0.942,3.78,C6Pm,517,517,517,515]+self.xhc33.values.ravel().tolist()+[4.798,1.44]
         H_input = np.array([H_input])
         H_input = pd.DataFrame(H_input,columns=self.H.x_col)
+        self.reformer_input = H_input
         
         self.重組33 = self.H.predict(H_input)
         
