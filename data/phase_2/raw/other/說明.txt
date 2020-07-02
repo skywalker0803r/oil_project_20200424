@@ -1,0 +1,4 @@
+1.excel檔案dcs data是DCS製程操作數據，十分鐘一筆。
+2.excel檔案lims data是品管取樣數據，一天一筆，取樣時間在每個工作表最左邊。
+3.lims data中的S002混摻輕油只取樣至2020/4/15，目前評估混摻輕油的組成是以進口及自煉輕油的進料比例換算。
+4.混摻輕油(Naphtha Properties)轉為23組成(需轉54)；Heart Cut Product Properties轉為33組成。

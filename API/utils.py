@@ -172,7 +172,6 @@ class Dual_net(nn.Module):
         if hasattr(m,'bias'):
             m.bias.data.fill_(0)
 
-
 class ANN_wrapper(object):
     def __init__(self,x_col,y_col,n_col,scaler,net):
         self.x_col = x_col
@@ -185,8 +184,10 @@ class ANN_wrapper(object):
         x = self.scaler.transform(x)
         x = torch.tensor(x,dtype=torch.float)
         y = self.net(x).detach().cpu().numpy()
+        print(y)
         y = pd.DataFrame(y,columns=self.y_col)
         y = self.normalize(y)
+        print(y)
         assert np.all(y.values >= 0)
         return y
     
@@ -196,6 +197,67 @@ class ANN_wrapper(object):
             assert len(col3) == 3
             y[col3] = y[col3].values / y[col3].sum(axis=1).values.reshape(-1,1)
         return y
+
+class ANN_58toy162(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = Linear(58,256)
+        self.fc2 = Linear(256,256)
+        self.fc3 = Linear(256,162)
+    
+    def forward(self,x):
+        x = F.tanh(self.fc1(x))
+        x = F.tanh(self.fc2(x))
+        x = F.sigmoid(self.fc3(x))
+        return x
+
+class ANN_58toy162_wrapper(object):
+    def __init__(self,x_col,y_col,c6_col,c7_col,ss_x,ss_y,net):
+        self.x_col = x_col
+        self.y_col = y_col
+        
+        self.c6_col = c6_col
+        self.drop_c6_col = list(set(col_names['xhc']) - set(self.c6_col))
+        
+        self.c7_col = c7_col
+        self.drop_c7_col = list(set(col_names['xle']) - set(self.c7_col))
+        
+        self.xhe = col_names['xhe']
+        
+        self.ss_x = ss_x
+        self.ss_y = ss_y
+        self.net = net
+        self.zero_col = df[y_col].sum()[df[y_col].sum() == 0].index.tolist()
+    
+    def predict(self,x): 
+        c6_total = x['Case Conditions_C6P- in Heart Cut (Input)_wt%'].values.reshape(-1,1)
+        c7_total = x['Case Conditions_C7+ in Light End (Input)_wt%'].values.reshape(-1,1)
+        
+        x = self.ss_x.transform(x)
+        x = torch.tensor(x,dtype=torch.float)
+        
+        y = self.net(x).detach().cpu().numpy()
+        y = self.ss_y.inverse_transform(y)
+        y = pd.DataFrame(y,columns=self.y_col)
+        
+        # 有部份成份可以強制為0
+        y[self.zero_col] = 0
+        
+        # 質量平衡(核心部份)
+        y[self.c6_col] = self.normalize(y[self.c6_col]) * c6_total
+        y[self.drop_c6_col] = self.normalize(y[self.drop_c6_col]) * (100 - c6_total)
+        
+        # 質量平衡(輕質部份)
+        y[self.c7_col] = self.normalize(y[self.c7_col]) * c7_total
+        y[self.drop_c7_col] = self.normalize(y[self.drop_c7_col]) * (100 - c7_total)
+        
+        # 質量平衡(重質部份)
+        y[self.xhe] = self.normalize(y[self.xhe]) * 100
+        
+        return y
+    
+    def normalize(self,x):
+        return x / x.sum(axis=1).values.reshape(-1,1)
 
 class transformer162162(object):
     def __init__(self):
@@ -355,6 +417,9 @@ class EVA(object):
         self.G = joblib.load('./model/transformer(33_to_15).pkl')
         self.H = joblib.load('./model/transformer(43_to_33).pkl')
         self.I = joblib.load('./model/transformer(54_to_23).pkl')
+        
+        self.J = joblib.load('./model/ANN(58_to_y162).pkl') #2020/07/02新增
+        
         self.col_names = joblib.load('./data/phase_2/cleaned/col_names.pkl')
 
     def __call__(self, X):
@@ -365,7 +430,9 @@ class EVA(object):
         # percent sum = 1 * 54component = 54
         self.sp162 = self.C.predict(case4.join(self.Xna))
         # percent sum = 100*3(le,hc,he) = 300
-        self.y162 = self.D(self.Xna, self.sp162)
+        
+        self.y162 = self.J.predict(case4.join(self.Xna)) # 2020/07/02新增
+        
         self.xhc = self.y162[self.col_names['xhc']]  # percent sum = 100
         self.xhc33_p = self.F(self.xhc)/100  # percent
 
