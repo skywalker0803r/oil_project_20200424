@@ -163,9 +163,9 @@ class Dual_net(nn.Module):
             v = v / torch.sum(v,dim=1).reshape(-1,1) # 分離係數加總為1
             output = torch.cat((output,v),dim=1)    
         
-        # 分離係數有部分可以強制為0或1
-        output[:,self.sp_zero_col] = 0
+        # 分離係數有些都是1有些都是0
         output[:,self.sp_one_col] = 1
+        output[:,self.sp_zero_col] = 0
         
         # 按照"層(輕核重)"將分離係數分三組
         sle = output[:,self.sle_idx]
@@ -199,6 +199,7 @@ class Dual_net(nn.Module):
         # 質量平衡(重質部份)
         y[:,self.xhe_col] = self.normalize(y[:,self.xhe_col]) * 100
         
+        # 返回組成
         return y
     
     def normalize(self,x):
@@ -206,6 +207,9 @@ class Dual_net(nn.Module):
     
     def reconstruction(self,xna,s):
         return (100*xna*s)/torch.diag(xna@s.T).reshape(-1,1)
+    
+    def inverse_reconstruction(self,xna,s,x):
+        return x*(torch.diag(xna@s.T).reshape(-1,1))/(100*xna)
     
     @staticmethod
     def _Fetch(x):
@@ -258,17 +262,52 @@ class ANN_wrapper(object):
         self.net = net
         self.col_names = col_names
         self.s_col = s_col
+        self.sp_one_col = sp_one_col
+        self.sp_zero_col = sp_zero_col
+        
     
+    def inverse_reconstruction(self,xna,s,x):
+        return x*(np.diag(xna@s.T).reshape(-1,1))/(100*xna)
+    
+    def reconstruction(self,xna,s):
+        return (100*xna*s)/np.diag(xna@s.T).reshape(-1,1)
+        
     def predict(self,x):
+        xna = x[self.col_names['xna']].values
+        
         x = torch.tensor(x.values,dtype=torch.float)
+        
+        # 預測組成
         y = self.net(x).detach().cpu().numpy()
         y = pd.DataFrame(y,columns=self.y_col)
         assert np.all(y.values >= 0)
         
+        # 預測分離係數
         sp_pred = np.hstack((self.net.sle.detach().numpy(),
                              self.net.shc.detach().numpy(),
                              self.net.she.detach().numpy()))
         sp_pred = pd.DataFrame(sp_pred,columns=self.col_names['sle']+self.col_names['shc']+self.col_names['she'])
+        
+        #用修改過的xle,xhc,xhe重算分離係數 
+        new_sle = self.inverse_reconstruction(xna,sp_pred.iloc[:,:54].values,y.iloc[:,:54].values)
+        new_shc = self.inverse_reconstruction(xna,sp_pred.iloc[:,54:-54].values,y.iloc[:,54:-54].values)
+        new_she = self.inverse_reconstruction(xna,sp_pred.iloc[:,-54:].values,y.iloc[:,-54:].values)
+        
+        # update 分離係數
+        sp_pred[self.col_names['sle']].update(new_sle)
+        sp_pred[self.col_names['shc']].update(new_shc)
+        sp_pred[self.col_names['she']] = 1 - sp_pred[self.col_names['sle']].values - sp_pred[self.col_names['shc']].values #總合為1
+        
+        # 分離係數有些都是1有些都是0
+        sp_pred[self.sp_one_col] = 1
+        sp_pred[self.sp_zero_col] = 0
+        
+        # 再用分離係數重算組成
+        #y[col_names['xle']] = self.reconstruction(xna,sp_pred[col_names['sle']])
+        #y[col_names['xhc']] = self.reconstruction(xna,sp_pred[col_names['shc']])
+        #y[col_names['xhe']] = self.reconstruction(xna,sp_pred[col_names['she']])
+        
+        # sort columns
         sp_pred = sp_pred[self.s_col]
         
         return y,sp_pred
@@ -440,7 +479,9 @@ class EVA(object):
         self.y23 = self.A.predict(x4)  # percent sum = 100
         self.Xna = self.B(self.y23)  # percent sum = 100
         # percent sum = 1 * 54component = 54
-        self.y162,self.sp162 = self.C.predict(case4.join(self.Xna))
+        c_x = case4.join(self.Xna)
+        c_x.columns = self.C.x_col
+        self.y162,self.sp162 = self.C.predict(c_x)
         
         self.xhc = self.y162[self.col_names['xhc']]  # percent sum = 100
         self.xhc33_p = self.F(self.xhc)/100  # percent
