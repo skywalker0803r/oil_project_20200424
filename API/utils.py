@@ -97,119 +97,37 @@ class transform_5423(object):
 class Dual_net(nn.Module):
     def __init__(self):
         super(Dual_net,self).__init__()
-        
-        # wt%中為0欄位
-        self.zero_col = zero_col 
-        
-        #輕質部份
-        self.c7_col = c7_col
-        self.drop_c7_col = drop_c7_col
-        
-        #核心部份
-        self.c6_col = c6_col 
-        self.drop_c6_col = drop_c6_col
-        
-        #重質部份
-        self.xhe_col = xhe_col
-        
-        #分離係數部份
-        self.sp_zero_col = sp_zero_col 
-        self.sp_one_col = sp_one_col
-        
-        # 輸入輸出設定
         C_in = 4
-        C_out = 3 
-        
+        C_out = 3
         N_in = 54
         N_out = 54
-        
-        F_in = C_out + N_out
-        F_out = C_out + N_out
-        
+        F_in = C_out+N_out
+        F_out = C_out+N_out
         O_out = 3
         
-        # 分離係數索引
-        self.sle_idx = sle_idx
-        self.shc_idx = shc_idx
-        self.she_idx = she_idx
-        
-        # 建立網路
+        # build C,N,F
         self.C_net = self._build_C_net(C_in,C_out)
         self.N_net = self._build_N_net(N_in,N_out) 
         self.F_net = self._build_F_net(F_in,F_out)
+        
+        # build O_net
         for i in range(54):
             setattr(self,'O_net{}'.format(i+1),self._build_O_net(F_out,O_out))
         
-        # 初始化網路權重
+        # initialize weight
         self.apply(self._init_weights)
             
     def forward(self,x):
-        
-        # 取得 case 和 xna
-        case,xna = self._Fetch(x)
-        
-        # 取得 c6_total 和 c7_total
-        self.c6_total = case[:,-1].reshape(-1,1)
-        self.c7_total = case[:,1].reshape(-1,1)
-        
-        # case xna 分別 forward 後再 combine 到一起
-        f = torch.cat((self.C_net(case),self.N_net(xna)),dim=1)
-        
-        # forward Onet 分離係數三個一組做預測
-        output = torch.tensor([])
+        c,n = self._Fetch(x)
+        c,n = self.C_net(c),self.N_net(n)
+        f = torch.cat((c,n),dim=1)
+        f = self.F_net(f)
+        output = torch.tensor([])#.cuda()
         for i in range(54):
             O_net = getattr(self,'O_net{}'.format(i+1))
-            v = F.sigmoid(O_net(f)) # 區間縮放到[0,1]
-            v = v / torch.sum(v,dim=1).reshape(-1,1) # 分離係數加總為1
-            output = torch.cat((output,v),dim=1)    
-        
-        # 分離係數有些都是1有些都是0
-        output[:,self.sp_one_col] = 1
-        output[:,self.sp_zero_col] = 0
-        
-        # 按照"層(輕核重)"將分離係數分三組
-        sle = output[:,self.sle_idx]
-        shc = output[:,self.shc_idx]
-        she = output[:,self.she_idx]
-        
-        # 記錄分離係數 以便之後使用
-        self.sle = sle
-        self.shc = shc
-        self.she = she
-        
-        # 重建組成 簡稱 wt%
-        xle = self.reconstruction(xna,sle)
-        xhc = self.reconstruction(xna,shc)
-        xhe = self.reconstruction(xna,she)
-        
-        # combine 三層 wt%
-        y = torch.cat((xle,xhc,xhe),dim=1)
-        
-        # wt%有部份成份可以強制為0
-        y[:,self.zero_col] = 0
-        
-        # 質量平衡(輕質部份)
-        y[:,self.c7_col] = self.normalize(y[:,self.c7_col]) * self.c7_total
-        y[:,self.drop_c7_col] = self.normalize(y[:,self.drop_c7_col]) * (100 - self.c7_total)
-        
-        # 質量平衡(核心部份)
-        y[:,self.c6_col] = self.normalize(y[:,self.c6_col]) * self.c6_total
-        y[:,self.drop_c6_col] = self.normalize(y[:,self.drop_c6_col]) * (100 - self.c6_total)
-        
-        # 質量平衡(重質部份)
-        y[:,self.xhe_col] = self.normalize(y[:,self.xhe_col]) * 100
-        
-        # 返回組成
-        return y
-    
-    def normalize(self,x):
-        return x / x.sum(dim=1).reshape(-1,1)
-    
-    def reconstruction(self,xna,s):
-        return (100*xna*s)/torch.diag(xna@s.T).reshape(-1,1)
-    
-    def inverse_reconstruction(self,xna,s,x):
-        return x*(torch.diag(xna@s.T).reshape(-1,1))/(100*xna)
+            v = F.sigmoid(O_net(f))
+            output = torch.cat((output,v),dim=1)
+        return output
     
     @staticmethod
     def _Fetch(x):
@@ -221,7 +139,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net
+        return net#.cuda()
     
     @staticmethod
     def _build_N_net(input_shape,output_shape):
@@ -229,7 +147,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net
+        return net#.cuda()
     
     @staticmethod
     def _build_F_net(input_shape,output_shape):
@@ -237,7 +155,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net
+        return net#.cuda()
     
     @staticmethod
     def _build_O_net(input_shape,output_shape):
@@ -245,7 +163,7 @@ class Dual_net(nn.Module):
             Linear(input_shape,128),
             Tanh(),
             Linear(128,output_shape))
-        return net
+        return net#.cuda()
     
     @staticmethod
     def _init_weights(m):
@@ -255,62 +173,30 @@ class Dual_net(nn.Module):
             m.bias.data.fill_(0)
 
 class ANN_wrapper(object):
-    def __init__(self,x_col,y_col,n_col,net):
+    def __init__(self,x_col,y_col,n_col,scaler,net):
         self.x_col = x_col
         self.y_col = y_col
         self.n_col = n_col
+        self.scaler = scaler
         self.net = net
-        self.col_names = col_names
-        self.s_col = s_col
-        self.sp_one_col = sp_one_col
-        self.sp_zero_col = sp_zero_col
-        
     
-    def inverse_reconstruction(self,xna,s,x):
-        return x*(np.diag(xna@s.T).reshape(-1,1))/(100*xna)
-    
-    def reconstruction(self,xna,s):
-        return (100*xna*s)/np.diag(xna@s.T).reshape(-1,1)
-        
     def predict(self,x):
-        xna = x[self.col_names['xna']].values
-        
-        x = torch.tensor(x.values,dtype=torch.float)
-        
-        # 預測組成
+        x = self.scaler.transform(x)
+        x = torch.tensor(x,dtype=torch.float)
         y = self.net(x).detach().cpu().numpy()
+        print(y)
         y = pd.DataFrame(y,columns=self.y_col)
+        y = self.normalize(y)
+        print(y)
         assert np.all(y.values >= 0)
-        
-        # 預測分離係數
-        sp_pred = np.hstack((self.net.sle.detach().numpy(),
-                             self.net.shc.detach().numpy(),
-                             self.net.she.detach().numpy()))
-        sp_pred = pd.DataFrame(sp_pred,columns=self.col_names['sle']+self.col_names['shc']+self.col_names['she'])
-        
-        #用修改過的xle,xhc,xhe重算分離係數 
-        new_sle = self.inverse_reconstruction(xna,sp_pred.iloc[:,:54].values,y.iloc[:,:54].values)
-        new_shc = self.inverse_reconstruction(xna,sp_pred.iloc[:,54:-54].values,y.iloc[:,54:-54].values)
-        new_she = self.inverse_reconstruction(xna,sp_pred.iloc[:,-54:].values,y.iloc[:,-54:].values)
-        
-        # update 分離係數
-        sp_pred[self.col_names['sle']].update(new_sle)
-        sp_pred[self.col_names['shc']].update(new_shc)
-        sp_pred[self.col_names['she']] = 1 - sp_pred[self.col_names['sle']].values - sp_pred[self.col_names['shc']].values #總合為1
-        
-        # 分離係數有些都是1有些都是0
-        sp_pred[self.sp_one_col] = 1
-        sp_pred[self.sp_zero_col] = 0
-        
-        # 再用分離係數重算組成
-        #y[col_names['xle']] = self.reconstruction(xna,sp_pred[col_names['sle']])
-        #y[col_names['xhc']] = self.reconstruction(xna,sp_pred[col_names['shc']])
-        #y[col_names['xhe']] = self.reconstruction(xna,sp_pred[col_names['she']])
-        
-        # sort columns
-        sp_pred = sp_pred[self.s_col]
-        
-        return y,sp_pred
+        return y
+    
+    def normalize(self,y):
+        for i in range(0,162+1-3,3):
+            col3 = self.y_col[i:i+3]
+            assert len(col3) == 3
+            y[col3] = y[col3].values / y[col3].sum(axis=1).values.reshape(-1,1)
+        return y
 
 class transformer162162(object):
     def __init__(self):
@@ -367,8 +253,13 @@ class ANN_energy_wrapper(object):
         y = self.net(x).detach().cpu().numpy()
         y = self.mm_y.inverse_transform(y)
         y = pd.DataFrame(y,columns=self.y_col)
+        y.iloc[:,-3:] = self.normalize(y.iloc[:,-3:].values)
         assert np.all(y.values >= 0)
+        assert y.iloc[:,-3:].sum(axis=1).mean() == 1
         return y
+    
+    def normalize(self,x):
+        return x / x.sum(axis=1).reshape(-1,1)
 
 class transformer_5433(object):
     def __init__(self,x_col,y_col,W):
