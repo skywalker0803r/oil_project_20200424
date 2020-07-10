@@ -137,7 +137,7 @@ class Dual_net(nn.Module):
         self.C_net = self._build_C_net(C_in,C_out)
         self.N_net = self._build_N_net(N_in,N_out) 
         self.F_net = self._build_F_net(F_in,F_out)
-        for i in range(54):
+        for i in range(108):
             setattr(self,'O_net{}'.format(i+1),self._build_O_net(F_out,O_out))
         
         # 初始化網路權重
@@ -200,7 +200,7 @@ class Dual_net(nn.Module):
         y[:,self.xhe_col] = self.normalize(y[:,self.xhe_col]) * 100
         
         # 返回組成
-        return y
+        return torch.cat((y,sle,shc,she),dim=1)
     
     def normalize(self,x):
         return x / x.sum(dim=1).reshape(-1,1)
@@ -279,13 +279,11 @@ class ANN_wrapper(object):
         
         # 預測組成
         y = self.net(x).detach().cpu().numpy()
+        y,sp_pred = y[:,:162],y[:,162:]
         y = pd.DataFrame(y,columns=self.y_col)
         assert np.all(y.values >= 0)
         
         # 預測分離係數
-        sp_pred = np.hstack((self.net.sle.detach().numpy(),
-                             self.net.shc.detach().numpy(),
-                             self.net.she.detach().numpy()))
         sp_pred = pd.DataFrame(sp_pred,columns=self.col_names['sle']+self.col_names['shc']+self.col_names['she'])
         
         #用修改過的xle,xhc,xhe重算分離係數 
